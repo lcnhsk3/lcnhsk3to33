@@ -132,27 +132,54 @@ function speakQuestion(id){
  const synth=window.speechSynthesis;
  synth.cancel();
  const status=document.getElementById('voiceStatus');
- if(status) status.textContent='Menyiapkan audio TTS Mandarin dari naskah PDF nomor '+id+'…';
- // Each numbered transcript is read in dialogue turns, with speaker labels omitted.
+ if(status) status.textContent='Menyiapkan seluruh dialog TTS Mandarin dari naskah PDF nomor '+id+'…';
+ // Pecah dialog berdasarkan baris dan putar satu per satu agar browser tidak memotong antrean.
  const lines=q.promptText.split(/\n+/).map(x=>x.trim()).filter(Boolean);
  const turns=[];
  for(const raw of lines){
   const m=raw.match(/^(男|女)\s*[：:](.*)$/);
-  if(m){const who=m[1]==='女'?'female':'male';const words=m[2].trim();if(words)turns.push({who,words});}
-  else {const words=raw.replace(/^(问|★)\s*[：:]?\s*/,'').trim();if(words)turns.push({who:'neutral',words});}
+  if(m){
+   const who=m[1]==='女'?'female':'male';
+   const words=m[2].trim();
+   if(words)turns.push({who,words});
+  }else{
+   const words=raw.replace(/^(问|★)\s*[：:]?\s*/,'').trim();
+   if(words)turns.push({who:'neutral',words});
+  }
  }
- if(!turns.length){turns.push({who:'neutral',words:q.promptText});}
- const voices=synth.getVoices();
- turns.forEach((turn,i)=>{
+ if(!turns.length)turns.push({who:'neutral',words:q.promptText});
+ let index=0;
+ const playNext=()=>{
+  if(index>=turns.length){
+   if(status)status.textContent='Seluruh dialog audio soal '+id+' selesai diputar.';
+   return;
+  }
+  const turn=turns[index];
   const u=new SpeechSynthesisUtterance(turn.words);
   const voice=chooseChineseVoice(turn.who);
   u.lang=voice?.lang||'zh-CN';
   if(voice)u.voice=voice;
-  u.rate=0.9;u.pitch=turn.who==='female'?1.06:0.94;u.volume=1;
-  if(i===0)u.onstart=()=>{if(status)status.textContent='Sedang memutar audio TTS Mandarin China — soal '+id;};
-  if(i===turns.length-1){u.onend=()=>{if(status)status.textContent='Audio soal '+id+' selesai diputar.';};u.onerror=()=>{if(status)status.textContent='Pemutaran audio gagal. Periksa dukungan suara Mandarin zh-CN pada browser.';};}
+  u.rate=0.9;
+  u.pitch=turn.who==='female'?1.06:turn.who==='male'?0.94:1;
+  u.volume=1;
+  u.onstart=()=>{
+   if(status)status.textContent='Memutar dialog '+(index+1)+' dari '+turns.length+' — soal '+id;
+  };
+  u.onend=()=>{
+   index++;
+   // Jeda singkat antarbaris agar pergantian penutur terdengar jelas.
+   window.setTimeout(playNext,180);
+  };
+  u.onerror=(event)=>{
+   // Lewati baris yang gagal agar baris dialog berikutnya tetap dibacakan.
+   index++;
+   if(status)status.textContent='Melanjutkan audio dialog… ('+index+'/'+turns.length+')';
+   window.setTimeout(playNext,250);
+  };
   synth.speak(u);
- });
+ };
+ // Beri browser waktu menyelesaikan cancel() sebelum utterance pertama dimulai.
+ window.setTimeout(playNext,120);
 }
 if('speechSynthesis' in window){refreshChineseVoices();window.speechSynthesis.onvoiceschanged=refreshChineseVoices;}
 function pickWord(id,w){let a=state.answers[id]?.value||[];if(a.includes(w))return;state.answers[id]={value:[...a,w]};render('W')}
